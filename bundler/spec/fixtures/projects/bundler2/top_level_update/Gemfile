@@ -5,4 +5,4 @@ source "https://rubygems.org"
 git_source(:github) {|repo_name| "https://github.com/#{repo_name}" }
 
 gem "octicons", "~> 19.2"
-gem "octicons_helper", "~> 19.2"
+gem "octicons_helper", "~> 19.3", ">= 19.3.0"
