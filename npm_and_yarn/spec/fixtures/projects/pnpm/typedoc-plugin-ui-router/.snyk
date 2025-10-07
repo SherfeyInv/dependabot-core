@@ -1,0 +1,23 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.1
+ignore: {}
+# patches apply the minimum changes required to fix a vulnerability
+patch:
+  SNYK-JS-LODASH-567746:
+    - typedoc-plugin-external-module-name > typedoc > lodash:
+        patched: '2025-10-07T00:47:36.095Z'
+        id: SNYK-JS-LODASH-567746
+        path: typedoc-plugin-external-module-name > typedoc > lodash
+    - typedoc-plugin-internal-external > typedoc > lodash:
+        patched: '2025-10-07T00:47:36.095Z'
+        id: SNYK-JS-LODASH-567746
+        path: typedoc-plugin-internal-external > typedoc > lodash
+  'npm:marked:20170907':
+    - typedoc-plugin-external-module-name > typedoc > marked:
+        patched: '2025-10-07T00:47:36.095Z'
+        id: 'npm:marked:20170907'
+        path: typedoc-plugin-external-module-name > typedoc > marked
+    - typedoc-plugin-internal-external > typedoc > marked:
+        patched: '2025-10-07T00:47:36.095Z'
+        id: 'npm:marked:20170907'
+        path: typedoc-plugin-internal-external > typedoc > marked
