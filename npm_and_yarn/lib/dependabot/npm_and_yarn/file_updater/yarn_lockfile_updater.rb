@@ -21,6 +21,7 @@ module Dependabot
         require_relative "npmrc_builder"
         require_relative "package_json_updater"
         require_relative "package_json_preparer"
+        require_relative "berry_lockfile_handler"
 
         extend T::Sig
 
@@ -222,6 +223,13 @@ module Dependabot
 
           if top_level_dependency_updates.all? { |dep| requirements_changed?(dep[:name]) }
             Helpers.run_yarn_command("install #{yarn_berry_args}".strip)
+
+            # Yarn berry resolves ranges to the latest matching version, which
+            # may differ from Dependabot's target. If the lockfile resolved to a
+            # different version, re-install with the exact target and rewrite
+            # the lockfile descriptor back to the range — same approach as yarn
+            # classic's replaceLockfileDeclaration.
+            pin_berry_versions_if_needed(top_level_dependency_updates, yarn_lock)
           else
             updates = top_level_dependency_updates.collect do |dep|
               dep[:name]
@@ -243,6 +251,78 @@ module Dependabot
           dep.requirements != dep.previous_requirements
         end
 
+        # Checks if yarn resolved to a different version than Dependabot's target
+        # and re-pins if needed. Yarn berry resolves ranges to the latest matching
+        # version, which can bypass Dependabot's version selection — including
+        # security updates (minimum safe version), ignore conditions, and cooldown.
+        sig do
+          params(
+            top_level_dependency_updates: T::Array[T::Hash[Symbol, T.untyped]],
+            yarn_lock: Dependabot::DependencyFile
+          ).void
+        end
+        def pin_berry_versions_if_needed(top_level_dependency_updates, yarn_lock)
+          parsed = BerryLockfileHandler.parse(yarn_lock.name)
+          return unless parsed
+
+          top_level_dependency_updates.each do |dep|
+            pin_berry_version_if_needed(dep, yarn_lock, parsed)
+          end
+        end
+
+        sig do
+          params(
+            dep: T::Hash[Symbol, T.untyped],
+            yarn_lock: Dependabot::DependencyFile,
+            parsed_lockfile: T::Hash[String, T.untyped]
+          ).void
+        end
+        def pin_berry_version_if_needed(dep, yarn_lock, parsed_lockfile)
+          version = dep[:version]
+          return unless version
+
+          dep_name = T.cast(dep[:name], String)
+          reqs = dep[:requirements]
+          return if reqs.nil? || reqs.empty?
+          return if reqs.any? { |req| req[:source] && req[:source][:type] == "git" }
+          return if BerryLockfileHandler.version_matches?(parsed_lockfile, dep_name, T.cast(version, String))
+
+          saved_package_jsons = save_package_jsons
+
+          Helpers.run_yarn_command(
+            "up #{dep_name}@#{version} #{yarn_berry_args}".strip,
+            fingerprint: "up <dep>@<version> #{yarn_berry_args}".strip
+          )
+
+          reqs.each do |req|
+            requirement = req[:requirement]
+            next unless requirement
+
+            BerryLockfileHandler.replace_declaration(yarn_lock.name, dep_name, T.cast(version, String), requirement)
+          end
+
+          # Restore package.json and re-install to normalize lockfile descriptors,
+          # same as yarn classic's replaceLockfileDeclaration flow.
+          restore_package_jsons(saved_package_jsons)
+          Helpers.run_yarn_command("install #{yarn_berry_args}".strip)
+        end
+
+        sig { returns(T::Hash[String, String]) }
+        def save_package_jsons
+          result = T.let({}, T::Hash[String, String])
+          package_files.each do |file|
+            next unless File.exist?(file.name)
+
+            result[file.name] = File.read(file.name)
+          end
+          result
+        end
+
+        sig { params(saved: T::Hash[String, String]).void }
+        def restore_package_jsons(saved)
+          saved.each { |path, content| File.write(path, content) }
+        end
+
         sig { params(yarn_lock: Dependabot::DependencyFile).returns(T::Hash[String, String]) }
         def run_yarn_berry_subdependency_updater(yarn_lock:)
           dep = T.must(sub_dependencies.first)
@@ -254,8 +334,23 @@ module Dependabot
             ["remove #{dep.name} #{yarn_berry_args}".strip, "remove <dep_name> #{yarn_berry_args}".strip]
           ]
 
+          original_content = File.read(yarn_lock.name)
           Helpers.run_yarn_commands(*commands)
-          { yarn_lock.name => File.read(yarn_lock.name) }
+
+          updated_content = File.read(yarn_lock.name)
+          if updated_content == original_content && Dependabot::Experiments.enabled?(:enable_audit_fix_fallback)
+            begin
+              NativeHelpers.run_yarn_audit_fix_command
+              dep.metadata[:audit_fix_used] = true
+            rescue SharedHelpers::HelperSubprocessFailed
+              Dependabot.logger.info(
+                "yarn npm audit --fix failed or partially fixed — continuing with any changes made"
+              )
+            end
+            updated_content = File.read(yarn_lock.name)
+          end
+
+          { yarn_lock.name => updated_content }
         end
 
         sig { returns(String) }
