@@ -334,7 +334,9 @@ module Dependabot
 
         # Validate the output format (e.g., "v20.18.1" or "20.18.1")
         if version.match?(/^v?\d+(\.\d+){2}$/)
-          version.strip.delete_prefix("v") # Remove the "v" prefix if present
+          parsed_version = version.strip.delete_prefix("v") # Remove the "v" prefix if present
+          Dependabot.logger.info("Using node version: #{parsed_version}")
+          parsed_version
         end
       rescue StandardError => e
         Dependabot.logger.error("Error retrieving Node.js version: #{e.message}")
@@ -423,7 +425,7 @@ module Dependabot
         end
 
         # Verify the installed version
-        installed_version = package_manager_version(name)
+        installed_version = package_manager_version(name, env: env)
 
         installed_version
       end
@@ -485,11 +487,11 @@ module Dependabot
       end
 
       # Get the version of the package manager by using corepack
-      sig { params(name: String).returns(String) }
-      def self.package_manager_version(name)
+      sig { params(name: String, env: T.nilable(T::Hash[String, String])).returns(String) }
+      def self.package_manager_version(name, env: nil)
         Dependabot.logger.info("Fetching version for package manager: #{name}")
 
-        version = package_manager_run_command(name, "-v").strip
+        version = package_manager_run_command(name, "-v", env: env).strip
 
         Dependabot.logger.info("Installed version of #{name}: #{version}")
 
@@ -527,7 +529,11 @@ module Dependabot
             env: env
           ).strip
         else
-          Dependabot::SharedHelpers.run_shell_command(full_command, fingerprint: fingerprint)
+          Dependabot::SharedHelpers.run_shell_command(
+            full_command,
+            fingerprint: fingerprint,
+            env: env
+          )
         end.strip
       rescue StandardError => e
         Dependabot.logger.error("Error running package manager command: #{full_command}, Error: #{e.message}")

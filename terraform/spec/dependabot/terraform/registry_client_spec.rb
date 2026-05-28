@@ -138,10 +138,10 @@ RSpec.describe Dependabot::Terraform::RegistryClient do
     expect(response).to contain_exactly(Gem::Version.new("0.1.0"), Gem::Version.new("0.2.0"))
   end
 
-  it "raises an error when it cannot find the dependency", :vcr do
+  it "raises DependencyNotFound when the module does not exist", :vcr do
     expect do
       client.all_module_versions(identifier: "does/not/exist")
-    end.to raise_error(/Response from registry was 404/)
+    end.to raise_error(Dependabot::DependencyNotFound)
   end
 
   it "fetches the source for a module dependency", :vcr do
@@ -296,6 +296,40 @@ RSpec.describe Dependabot::Terraform::RegistryClient do
         expect do
           client.service_url_for("modules.v1")
         end.to raise_error(Dependabot::PrivateSourceBadResponse)
+      end
+    end
+
+    context "when the metadata endpoint raises a certificate error" do
+      it "raises PrivateSourceCertificateFailure" do
+        stub_request(:get, metadata).to_raise(
+          Excon::Error::Socket.new(
+            StandardError.new("SSL_connect returned=1 errno=0 state=error: certificate verify failed")
+          )
+        )
+
+        expect do
+          client.service_url_for("modules.v1")
+        end.to raise_error(Dependabot::PrivateSourceCertificateFailure)
+      end
+    end
+
+    context "when the metadata endpoint returns a 5xx error" do
+      it "raises PrivateSourceBadResponse instead of the misleading service error" do
+        stub_request(:get, metadata).and_return(status: 502)
+
+        expect do
+          client.service_url_for("modules.v1")
+        end.to raise_error(Dependabot::PrivateSourceBadResponse)
+      end
+    end
+
+    context "when the metadata endpoint returns a 401 error" do
+      it "raises PrivateSourceAuthenticationFailure" do
+        stub_request(:get, metadata).and_return(status: 401)
+
+        expect do
+          client.service_url_for("modules.v1")
+        end.to raise_error(Dependabot::PrivateSourceAuthenticationFailure)
       end
     end
 
