@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"dependencies": {
-		"@googleapis/youtube": "^10.1.0",
+		"@googleapis/youtube": "^11.0.1",
                 "@tiptap-pro/extension-mathematics": "latest"
 	}
 }
