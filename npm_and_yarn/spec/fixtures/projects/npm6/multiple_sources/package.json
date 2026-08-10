@@ -1,7 +1,7 @@
 {
   "private": true,
   "devDependencies": {
-    "gulp": "github:gulpjs/gulp#4.0"
+    "gulp": "5.0.0"
   },
   "name": "test",
   "description": "This repository is a test.",
@@ -9,7 +9,7 @@
   "main": "gulpfile.js",
   "dependencies": {
     "fetch-factory": "0.1.x",
-    "gulp": "^4.0.0-alpha.2"
+    "gulp": "^5.0.0"
   },
   "scripts": {
     "test": "gulp styles",
